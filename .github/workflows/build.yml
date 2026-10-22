@@ -45,7 +45,8 @@ jobs:
 
       - name: DSP report
         run: |
-          exe=$(ls build/ProximityEffectTests_artefacts/Release/ProximityEffectTests build/ProximityEffectTests_artefacts/Release/ProximityEffectTests.exe 2>/dev/null | head -1)
+          exe=build/ProximityEffectTests_artefacts/Release/ProximityEffectTests
+          [[ -f "$exe.exe" ]] && exe="$exe.exe"
           "$exe" --report | tee test-report.txt
 
       - name: pluginval (Windows)
