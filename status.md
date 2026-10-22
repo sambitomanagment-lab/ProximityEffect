@@ -9,7 +9,7 @@
 
 ## 2. Ultimo aggiornamento
 
-2026-10-22 13:12 UTC (progetto caricato nel repository dedicato ProximityEffect)
+2026-10-22 13:52 UTC (CI verde nel repo dedicato; zip completo consegnato)
 
 ## 3. Stato generale
 
@@ -77,6 +77,7 @@ Come le manopole guidano il personaggio (in `ChairGuy::tick`):
 | 2026-10-22 | GitHub Actions, macos-latest | stesso run | build universale e ctest OK; fallito lo step "DSP report" per un errore nello script (corretto in 06accbd) |
 | 2026-10-22 | GitHub Actions, Windows + macOS | run 39750468726 (06accbd, versione sessione 2) | tutto verde; auval: "AU VALIDATION SUCCEEDED"; lipo: x86_64 arm64 |
 | 2026-10-22 | GitHub Actions, Windows + macOS | run 39754412189 (eaab638, nuovo personaggio) | tutto verde: build, ctest, report DSP, pluginval (Windows e macOS), auval, zip |
+| 2026-10-22 | GitHub Actions, Windows + macOS (repo ProximityEffect) | run 39784011182 (d69737c) | tutto verde |
 
 ## 8. Problemi aperti e tentativi
 
@@ -86,7 +87,9 @@ Come le manopole guidano il personaggio (in `ChairGuy::tick`):
 
 ## 9. GitHub
 
-- Repository dedicato: `sambitomanagment-lab/ProximityEffect`, push di `main` (7b56f8c) verificato con `git ls-remote` il 2026-10-22. Primo run Actions: https://github.com/sambitomanagment-lab/ProximityEffect/actions/runs/39783800534 (in corso al momento della scrittura).
+- Repository dedicato: `sambitomanagment-lab/ProximityEffect`, push di `main` (7b56f8c) verificato con `git ls-remote` il 2026-10-22. Primo run Actions: https://github.com/sambitomanagment-lab/ProximityEffect/actions/runs/39783800534 (verde). Run 39784011182 (d69737c): Windows x64 e macOS Universal verdi; artifact ProximityEffect-Windows-x64 e ProximityEffect-macOS-Universal.
+- Push dei tag (es. v1.0.0) e cancellazione branch rifiutati dal proxy della sessione: la Release va creata dall'utente da GitHub (Releases → Draft a new release → tag v1.0.0).
+- Build Windows di prova cross-compilata da Linux (llvm-mingw, JUCE con piccole patch locali, non nel repo) inclusa in `/mnt/project-files/proximity-effect/ProximityEffect-completo.zip`: NON verificata su Windows; sotto Wine il test si blocca in `SimpleShapedText::shape` (disegno testo). Usare gli artifact CI.
 - Storico: in precedenza il progetto viveva nel branch `proximity-effect` di PRODUCER-OS (vedi §8).
 - Workflow nel vecchio branch PRODUCER-OS: `.github/workflows/proximity-effect.yml` (copia di `proximity-effect/.github/workflows/build.yml` con percorsi adattati), si attiva solo sul branch `proximity-effect` e sui tag `proximity-effect-v*`.
 - Ultimo run verde con il personaggio nuovo: https://github.com/sambitomanagment-lab/PRODUCER-OS/actions/runs/39754412189 (artifact `ProximityEffect-Windows-x64` e `ProximityEffect-macOS-Universal`, conservati da GitHub per 90 giorni).
