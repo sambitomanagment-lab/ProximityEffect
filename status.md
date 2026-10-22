@@ -5,11 +5,11 @@
 - **Nome:** Proximity Effect (plugin audio VST3 / AU / Standalone, JUCE 8.0.4, C++17, CMake)
 - **Copia locale persistente (cartella condivisa del progetto Claude):** `/mnt/project-files/proximity-effect/ProximityEffect/`
 - **Copia di lavoro della sessione cloud (temporanea):** `/home/claude/ProximityEffect/`
-- **Copia su GitHub (temporanea):** repository privato `sambitomanagment-lab/PRODUCER-OS`, branch `proximity-effect`, cartella `proximity-effect/`. Vedi §9.
+- **Repository GitHub:** `sambitomanagment-lab/ProximityEffect`, branch `main` (pubblicato il 2026-10-22 alle 13:10 UTC). Nota: al momento del push il repository risulta **pubblico** (creato così dall'utente); la visibilità non è stata toccata. Vedi §9.
 
 ## 2. Ultimo aggiornamento
 
-2026-10-22 13:05 UTC (preparato lo zip per il repository dedicato)
+2026-10-22 13:12 UTC (progetto caricato nel repository dedicato ProximityEffect)
 
 ## 3. Stato generale
 
@@ -80,21 +80,22 @@ Come le manopole guidano il personaggio (in `ChairGuy::tick`):
 
 ## 8. Problemi aperti e tentativi
 
-- Nessun repository dedicato: soluzione temporanea concordata, branch `proximity-effect` di PRODUCER-OS (main non toccato).
+- Branch `proximity-effect` in PRODUCER-OS: richiesta la cancellazione; `git push --delete` rifiutato con HTTP 403 dal proxy della sessione, quindi il branch esiste ancora e va eliminato dall'interfaccia GitHub (Branches → cestino). Main di PRODUCER-OS mai toccato.
 - Runner macOS su repo privato: consumano minuti 10× (circa 25 minuti a run).
 - CI macOS "DSP report": `ls` di un file .exe inesistente faceva fallire lo step; sostituito con un controllo esplicito.
 
 ## 9. GitHub
 
-- Accesso push a `sambitomanagment-lab/PRODUCER-OS` verificato; creazione nuovi repository non disponibile da questa sessione.
-- Workflow nel branch: `.github/workflows/proximity-effect.yml` (copia di `proximity-effect/.github/workflows/build.yml` con percorsi adattati), si attiva solo sul branch `proximity-effect` e sui tag `proximity-effect-v*`.
+- Repository dedicato: `sambitomanagment-lab/ProximityEffect`, push di `main` (7b56f8c) verificato con `git ls-remote` il 2026-10-22. Primo run Actions: https://github.com/sambitomanagment-lab/ProximityEffect/actions/runs/39783800534 (in corso al momento della scrittura).
+- Storico: in precedenza il progetto viveva nel branch `proximity-effect` di PRODUCER-OS (vedi §8).
+- Workflow nel vecchio branch PRODUCER-OS: `.github/workflows/proximity-effect.yml` (copia di `proximity-effect/.github/workflows/build.yml` con percorsi adattati), si attiva solo sul branch `proximity-effect` e sui tag `proximity-effect-v*`.
 - Ultimo run verde con il personaggio nuovo: https://github.com/sambitomanagment-lab/PRODUCER-OS/actions/runs/39754412189 (artifact `ProximityEffect-Windows-x64` e `ProximityEffect-macOS-Universal`, conservati da GitHub per 90 giorni).
 - Artifacts (zip Windows e macOS): scaricabili dalla pagina del run; da questa sessione il download è bloccato dal proxy di rete, quindi non sono copiati in locale.
 
 ## 10. Repository locale e remoto
 
 - Locale: repo git in `ProximityEffect/` (branch `main`) e `git bundle` in `/mnt/project-files/proximity-effect/ProximityEffect.bundle`.
-- Remoto: PRODUCER-OS, branch `proximity-effect`.
+- Remoto: `origin` = https://github.com/sambitomanagment-lab/ProximityEffect.git, branch `main`.
 
 ## 11. File generati e artefatti
 
