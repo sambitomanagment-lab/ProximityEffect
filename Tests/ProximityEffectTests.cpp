@@ -554,14 +554,18 @@ void writeSnapshots (const File& dir)
 {
     section ("snapshots");
     dir.createDirectory();
-    struct Shot { const char* name; float distance; bool angry; bool pushed; };
-    for (auto shot : { Shot { "ui-far.png", 100.0f, false, false }, Shot { "ui-mid.png", 50.0f, false, false },
-                       Shot { "ui-close.png", 5.0f, false, false }, Shot { "ui-max.png", 0.0f, false, true },
-                       Shot { "ui-angry.png", 40.0f, true, false } })
+    struct Shot { const char* name; float distance; bool angry; bool pushed; int pattern = 1; };
+    for (auto shot : { Shot { "ui-far.png", 100.0f, false, false }, Shot { "ui-default.png", 60.0f, false, false },
+                       Shot { "ui-mid.png", 50.0f, false, false }, Shot { "ui-30cm.png", 30.0f, false, false },
+                       Shot { "ui-10cm.png", 10.0f, false, false }, Shot { "ui-close.png", 5.0f, false, false },
+                       Shot { "ui-0cm-omni.png", 0.0f, false, false, 0 }, Shot { "ui-0cm-cardioid.png", 0.0f, false, false, 1 },
+                       Shot { "ui-max.png", 0.0f, false, true, 4 }, Shot { "ui-angry.png", 40.0f, true, false },
+                       Shot { "ui-angry-far.png", 90.0f, true, false } })
     {
         ProximityEffectProcessor p;
         setParam (p, ParamIDs::distance, shot.distance);
         setParam (p, ParamIDs::angry, shot.angry ? 1.0f : 0.0f);
+        setParam (p, ParamIDs::pattern, (float) shot.pattern);
         if (shot.pushed)
         {
             setParam (p, ParamIDs::pattern, 4.0f);
