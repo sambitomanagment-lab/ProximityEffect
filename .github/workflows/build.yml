@@ -1,31 +1,109 @@
-name: Build
+# Builds, tests and packages Proximity Effect on Windows and macOS.
+# A tag starting with "v" (e.g. v1.0.0) also publishes a GitHub Release, only if every check passed.
+name: Proximity Effect
 
 on:
   push:
+    branches: ["**"]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
+env:
+  PROJECT_DIR: .
+  PLUGINVAL_VERSION: v1.0.4
+
 jobs:
   build:
+    name: ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        include:
+          - name: Windows x64
+            os: windows-latest
+            cmake_args: -A x64
+          - name: macOS Universal
+            os: macos-latest
+            cmake_args: "'-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'"
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DPE_BUILD_TESTS=ON ${{ matrix.cmake_args }}
 
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: Upload plugins
-        uses: actions/upload-artifact@v4
+      - name: Unit tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: DSP report
+        run: |
+          exe=$(ls build/ProximityEffectTests_artefacts/Release/ProximityEffectTests build/ProximityEffectTests_artefacts/Release/ProximityEffectTests.exe 2>/dev/null | head -1)
+          "$exe" --report | tee test-report.txt
+
+      - name: pluginval (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          curl -sSL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/download/${PLUGINVAL_VERSION}/pluginval_Windows.zip"
+          7z x -y pluginval.zip > /dev/null
+          ./pluginval.exe --strictness-level 10 --skip-gui-tests --validate-in-process \
+            --validate "build/ProximityEffect_artefacts/Release/VST3/Proximity Effect.vst3"
+
+      - name: pluginval + auval (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          curl -sSL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/download/${PLUGINVAL_VERSION}/pluginval_macOS.zip"
+          unzip -q pluginval.zip
+          art="build/ProximityEffect_artefacts/Release"
+          for f in "$art/VST3/Proximity Effect.vst3" "$art/AU/Proximity Effect.component"; do
+            codesign --force --deep --sign - "$f"
+          done
+          pluginval.app/Contents/MacOS/pluginval --strictness-level 10 --skip-gui-tests --validate-in-process \
+            --validate "$art/VST3/Proximity Effect.vst3"
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$art/AU/Proximity Effect.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          auval -a | grep -i prox || true
+          auval -strict -v aufx Prxe Smbt
+          lipo -archs "$art/VST3/Proximity Effect.vst3/Contents/MacOS/Proximity Effect"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/package.ps1
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: scripts/package.sh
+
+      - uses: actions/upload-artifact@v4
         with:
-          name: ProximityEffect-${{ runner.os }}
+          name: ${{ runner.os == 'Windows' && 'ProximityEffect-Windows-x64' || 'ProximityEffect-macOS-Universal' }}
           path: |
-            build/ProximityEffect_artefacts/Release/VST3
-            build/ProximityEffect_artefacts/Release/AU
-            build/ProximityEffect_artefacts/Release/Standalone
+            ${{ env.PROJECT_DIR }}/dist/*.zip
+            ${{ env.PROJECT_DIR }}/test-report.txt
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" artifacts/*/*.zip \
+            --repo "${GITHUB_REPOSITORY}" --title "Proximity Effect ${GITHUB_REF_NAME}" --generate-notes

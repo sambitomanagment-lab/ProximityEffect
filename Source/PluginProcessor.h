@@ -18,6 +18,7 @@ namespace ParamIDs
     inline constexpr auto angry     = "angry";
     inline constexpr auto pad       = "pad";
     inline constexpr auto polarity  = "polarity";
+    inline constexpr auto bypass    = "bypass";
 }
 
 class ProximityEffectProcessor : public juce::AudioProcessor
@@ -30,7 +31,10 @@ public:
     void releaseResources() override {}
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     using AudioProcessor::processBlock;
+    using AudioProcessor::processBlockBypassed;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    void processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    juce::AudioProcessorParameter* getBypassParameter() const override;
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -66,16 +70,22 @@ private:
     static constexpr int coeffUpdateInterval = 16;
 
     void updateWetFilters (float amount, float pattern, float lowEndDb);
+    void process (juce::AudioBuffer<float>&, bool forceBypass);
 
     std::unique_ptr<juce::dsp::Oversampling<float>> oversampling;
     double baseRate = 44100.0, osRate = 176400.0;
     int preparedBlockSize = 512;
+
+    // Input delayed by the oversampling latency, so bypass stays time-aligned.
+    juce::AudioBuffer<float> dryDelay, delayedScratch;
+    int dryDelayWrite = 0, latency = 0;
 
     Biquad hpf[maxChannels], air[maxChannels];
     Biquad proximityShelf[maxChannels], chestBump[maxChannels];
     Biquad angryPreEmph[maxChannels], angryTame[maxChannels];
 
     juce::SmoothedValue<float> inputGainSm, outputGainSm, hpfBlend, airBlend;
+    juce::SmoothedValue<float> bypassBlend;
     juce::SmoothedValue<float> amountSm, patternSm, lowEndSm, boostSm, mixSm, angryBlend;
 
     std::atomic<float>* pDistance = nullptr;
@@ -90,6 +100,7 @@ private:
     std::atomic<float>* pAngry = nullptr;
     std::atomic<float>* pPad = nullptr;
     std::atomic<float>* pPolarity = nullptr;
+    std::atomic<float>* pBypass = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ProximityEffectProcessor)
 };

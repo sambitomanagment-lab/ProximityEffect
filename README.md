@@ -27,34 +27,65 @@ Pad → Input Gain → Polarità → HPF → *oversampling 4x* → shelf di pros
 
 La latenza dovuta all'oversampling (circa 61 campioni a 48 kHz) viene comunicata alla DAW, che la compensa.
 
-## Compilare su Windows
+## Installazione
 
-Servono [Visual Studio 2022](https://visualstudio.microsoft.com/) (carico di lavoro "Sviluppo di applicazioni desktop con C++"), [CMake](https://cmake.org/download/) 3.22 o superiore e Git.
+Vedi [docs/INSTALL.md](docs/INSTALL.md): Windows, macOS, FL Studio e le altre DAW.
+
+## Compilare
+
+Requisiti: CMake 3.22+, Git e un compilatore C++17.
+- Windows: Visual Studio 2022 con "Sviluppo di applicazioni desktop con C++".
+- macOS: Xcode (o i Command Line Tools).
+- Linux: g++ e le librerie di sviluppo di ALSA, FreeType, fontconfig e X11.
+
+JUCE 8.0.4 viene scaricato automaticamente al primo configure. Per usare una copia locale imposta `JUCE_PATH`.
+
+Un solo comando configura, compila, esegue i test e crea lo zip in `dist/`:
 
 ```bat
-cmake -B build
-cmake --build build --config Release
+:: Windows (PowerShell o cmd)
+powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 ```
-
-JUCE viene scaricato automaticamente al primo configure. Se hai già JUCE in locale: `cmake -B build -DJUCE_PATH=C:\percorso\JUCE`.
-
-Il plugin si trova in `build\ProximityEffect_artefacts\Release\VST3\Proximity Effect.vst3`: copialo in `C:\Program Files\Common Files\VST3\`.
-
-## Compilare su macOS
-
-Servono Xcode e CMake.
 
 ```sh
-cmake -B build -G Xcode
-cmake --build build --config Release
+# macOS / Linux
+scripts/build.sh
 ```
 
-Trovi `Proximity Effect.vst3` e `Proximity Effect.component` (AU) in `build/ProximityEffect_artefacts/Release/`. Copiali in `~/Library/Audio/Plug-Ins/VST3/` e `~/Library/Audio/Plug-Ins/Components/`.
+Risultato:
 
-## Build automatiche
+| Piattaforma | Pacchetto | Contenuto |
+|---|---|---|
+| Windows | `dist/ProximityEffect-Windows-x64.zip` | VST3 x64, Standalone .exe |
+| macOS | `dist/ProximityEffect-macOS-Universal.zip` | VST3, AU, Standalone .app (arm64 + x86_64, firma ad-hoc) |
+| Linux | `dist/ProximityEffect-Linux-x64.zip` | VST3, Standalone |
 
-Su GitHub, il workflow in `.github/workflows/build.yml` compila Windows e macOS a ogni push e allega i plugin come artifact.
+I file compilati singoli restano in `build/ProximityEffect_artefacts/Release/`.
 
-## Strumento di verifica
+## Test
 
-`cmake -B build -DPE_BUILD_TOOLS=ON` aggiunge `DevCheck`, che misura la risposta in frequenza per distanza e pattern e salva screenshot dell'interfaccia.
+`cmake -B build -DPE_BUILD_TESTS=ON` aggiunge `ProximityEffectTests`, eseguito da `ctest`. Controlla:
+- calibrazione del proximity effect (Figure 8 circa +10 dB, Cardioid circa +5 dB, Omni 0 dB), risposta piatta a 100 cm;
+- pad -20 dB, HPF, Air, Angry, gain, mix;
+- latenza dichiarata uguale a quella reale, polarità, bypass allineato in tempo;
+- sample rate da 22,05 a 192 kHz, buffer da 1 a 2048 campioni e buffer più grandi di quelli annunciati;
+- layout mono e stereo;
+- assenza di click durante l'automazione;
+- salvataggio e ripristino dello stato, parametri automatizzabili;
+- creazione e ridimensionamento della GUI.
+
+Opzioni: `--report` stampa la tabella completa di risposta in frequenza, `--snapshots DIR` salva screenshot della GUI.
+
+## GitHub Actions
+
+`.github/workflows/build.yml` compila su Windows e macOS a ogni push, esegue i test, pluginval (strictness 10) e auval, e carica gli zip come artifact. Un tag `v*` (per esempio `v1.0.0`) pubblica una Release con gli zip, solo se tutti i controlli sono passati.
+
+## Struttura
+
+```
+Source/          codice del plugin (DSP, GUI)
+Tests/           test automatici
+scripts/         build e packaging
+docs/INSTALL.md  istruzioni di installazione
+status.md        stato del lavoro
+```

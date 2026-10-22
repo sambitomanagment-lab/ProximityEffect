@@ -36,6 +36,7 @@ ProximityEffectProcessor::ProximityEffectProcessor()
     pAngry = apvts.getRawParameterValue (ParamIDs::angry);
     pPad = apvts.getRawParameterValue (ParamIDs::pad);
     pPolarity = apvts.getRawParameterValue (ParamIDs::polarity);
+    pBypass = apvts.getRawParameterValue (ParamIDs::bypass);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout ProximityEffectProcessor::createLayout()
@@ -74,6 +75,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout ProximityEffectProcessor::cr
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::angry, 1 }, "Angry", false));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::pad, 1 }, "Ego Killer -20dB", false));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::polarity, 1 }, "Polarity Invert", false));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::bypass, 1 }, "Bypass", false));
 
     return layout;
 }
@@ -81,7 +83,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout ProximityEffectProcessor::cr
 float ProximityEffectProcessor::patternFactor (int index) noexcept
 {
     // Omni is pure pressure (no proximity), figure 8 is pure gradient (maximum).
-    static constexpr float factors[] = { 0.0f, 0.5f, 0.63f, 0.75f, 1.0f };
+    static constexpr float factors[] = { 0.0f, 0.48f, 0.6f, 0.72f, 1.0f };
     return factors[juce::jlimit (0, 4, index)];
 }
 
@@ -104,7 +106,12 @@ void ProximityEffectProcessor::prepareToPlay (double sampleRate, int samplesPerB
         juce::dsp::Oversampling<float>::filterHalfBandFIREquiripple, true, true);
     oversampling->initProcessing ((size_t) preparedBlockSize);
     osRate = baseRate * (double) oversampling->getOversamplingFactor();
-    setLatencySamples ((int) std::round (oversampling->getLatencyInSamples()));
+    latency = (int) std::round (oversampling->getLatencyInSamples());
+    setLatencySamples (latency);
+    dryDelay.setSize ((int) numChannels, latency + 1);
+    dryDelay.clear();
+    delayedScratch.setSize ((int) numChannels, preparedBlockSize);
+    dryDelayWrite = 0;
 
     for (int ch = 0; ch < maxChannels; ++ch)
     {
@@ -129,6 +136,7 @@ void ProximityEffectProcessor::prepareToPlay (double sampleRate, int samplesPerB
     prime (outputGainSm, baseRate, dbToGain (pOutput->load()));
     prime (hpfBlend, baseRate, pHpf->load());
     prime (airBlend, baseRate, pAir->load());
+    prime (bypassBlend, baseRate, pBypass->load());
 
     prime (amountSm, osRate, closenessFromDistance (pDistance->load()));
     prime (patternSm, osRate, patternFactor ((int) pPattern->load()));
@@ -144,7 +152,8 @@ void ProximityEffectProcessor::updateWetFilters (float amount, float pattern, fl
 {
     // The bass corner climbs from ~90 Hz to ~250 Hz as the source gets closer.
     const double shelfFreq = 90.0 + 160.0 * amount;
-    const double shelfGain = amount * pattern * (12.0 + lowEndDb);
+    // Low-End Push at 0 gives ~+10 dB of bass (figure 8) / ~+5 dB (cardioid) at the pop filter.
+    const double shelfGain = amount * pattern * (11.5 + lowEndDb);
     const double bumpGain = amount * pattern * 3.0;
 
     for (int ch = 0; ch < maxChannels; ++ch)
@@ -156,9 +165,24 @@ void ProximityEffectProcessor::updateWetFilters (float amount, float pattern, fl
 
 void ProximityEffectProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
+    process (buffer, false);
+}
+
+void ProximityEffectProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    process (buffer, true);
+}
+
+juce::AudioProcessorParameter* ProximityEffectProcessor::getBypassParameter() const
+{
+    return apvts.getParameter (ParamIDs::bypass);
+}
+
+void ProximityEffectProcessor::process (juce::AudioBuffer<float>& buffer, bool forceBypass)
+{
     juce::ScopedNoDenormals noDenormals;
 
-    const int numChannels = juce::jmin (buffer.getNumChannels(), maxChannels);
+    const int numChannels = juce::jmin (buffer.getNumChannels(), maxChannels, dryDelay.getNumChannels());
     for (int ch = getTotalNumInputChannels(); ch < buffer.getNumChannels(); ++ch)
         buffer.clear (ch, 0, buffer.getNumSamples());
 
@@ -176,6 +200,7 @@ void ProximityEffectProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     boostSm.setTargetValue (pBoost->load());
     mixSm.setTargetValue (pMix->load() / 100.0f);
     angryBlend.setTargetValue (pAngry->load());
+    bypassBlend.setTargetValue (forceBypass || pBypass->load() > 0.5f ? 1.0f : 0.0f);
 
     float peak = 0.0f;
     const int maxChunk = preparedBlockSize; // the oversampler can't take more than it was prepared for
@@ -186,6 +211,22 @@ void ProximityEffectProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
         float* channels[maxChannels] = {};
         for (int ch = 0; ch < numChannels; ++ch)
             channels[ch] = buffer.getWritePointer (ch, start);
+
+        // Keep a latency-aligned copy of the untouched input for bypass.
+        float* delayed[maxChannels] = {};
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            delayed[ch] = delayedScratch.getWritePointer (ch);
+            float* ring = dryDelay.getWritePointer (ch);
+            int w = dryDelayWrite;
+            for (int i = 0; i < n; ++i)
+            {
+                ring[w] = channels[ch][i];
+                w = (w + 1) % dryDelay.getNumSamples();
+                delayed[ch][i] = ring[w];
+            }
+        }
+        dryDelayWrite = (dryDelayWrite + n) % dryDelay.getNumSamples();
 
         // --- Input stage (base rate): pad, input gain, polarity, HPF ---
         for (int i = 0; i < n; ++i)
@@ -245,10 +286,12 @@ void ProximityEffectProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
         {
             const float a = airBlend.getNextValue();
             const float g = outputGainSm.getNextValue();
+            const float bp = bypassBlend.getNextValue();
             for (int ch = 0; ch < numChannels; ++ch)
             {
                 const float x = channels[ch][i];
-                const float y = (x + a * (air[ch].process (x) - x)) * g;
+                float y = (x + a * (air[ch].process (x) - x)) * g;
+                y += bp * (delayed[ch][i] - y);
                 channels[ch][i] = y;
                 peak = juce::jmax (peak, std::abs (y));
             }
