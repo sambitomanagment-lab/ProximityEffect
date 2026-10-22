@@ -9,7 +9,7 @@
 
 ## 2. Ultimo aggiornamento
 
-2026-10-22 09:40 UTC (risultati CI aggiunti alle 09:37)
+2026-10-22 13:05 UTC (preparato lo zip per il repository dedicato)
 
 ## 3. Stato generale
 
@@ -106,7 +106,11 @@ Come le manopole guidano il personaggio (in `ChairGuy::tick`):
 
 ## 12. Ultima attività completata
 
-Personaggio originale animato con tutte le reazioni richieste; test, screenshot e pluginval superati su Linux.
+Personaggio originale animato con tutte le reazioni richieste; CI verde su Windows e macOS (run 39754412189). Creato `ProximityEffect-repo.zip` (progetto completo con storia git) per il repository dedicato. Screenshot di riepilogo in `docs/screenshots/`.
+
+Domande aperte per l'utente:
+- In Omni a 0 cm il personaggio si arrabbia quasi come in Cardioid: far pesare di più il pattern sulla reazione?
+- Manopole, levette e scena sono ridisegnati in codice (non l'artwork originale): sostituirli con ritagli del mockup?
 
 ## 13. Prossima attività consigliata
 
@@ -120,10 +124,11 @@ Personaggio originale animato con tutte le reazioni richieste; test, screenshot 
 - Ritaglio del personaggio: `python3 scripts/extract_character.py` (Python 3 con Pillow e NumPy).
 - Screenshot: `build/ProximityEffectTests_artefacts/Release/ProximityEffectTests --snapshots cartella`.
 - Tornare al personaggio vettoriale: basta che `Assets/character.png` non sia incluso (ChairGuy usa `paintVector`).
-- Per spostare il progetto in un repo nuovo, dalla cartella `proximity-effect/`:
+- Per pubblicare nel repo nuovo (vuoto, privato): estrai `ProximityEffect-repo.zip`, entra nella cartella `ProximityEffect` (contiene già la storia git, branch `main`) e:
   ```sh
-  git init && git add -A && git commit -m "Proximity Effect"
   git remote add origin https://github.com/<utente>/proximity-effect.git
   git push -u origin main
   ```
+  Il workflow `.github/workflows/build.yml` parte da solo; per una release: `git tag v1.0.0 && git push origin v1.0.0`. Poi si può eliminare il branch `proximity-effect` da PRODUCER-OS.
+- Senza git (caricamento dal browser su GitHub): carica il contenuto della cartella; la cartella `.github` è nascosta, assicurati che venga inclusa.
 - In una nuova chat con Claude: indica questo file e il percorso del progetto.
