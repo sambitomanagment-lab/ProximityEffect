@@ -7,7 +7,7 @@ namespace Layout
     constexpr int knob = 96, patternKnob = 80;
     const Point<int> inputGain { 112, 142 }, lowEnd { 112, 296 }, pattern { 100, 480 };
     const Point<int> output { 848, 142 }, gainBoost { 848, 296 }, mix { 848, 455 };
-    const Rectangle<int> guy { 300, 140, 500, 380 };
+    const Rectangle<int> guy { 260, 120, 540, 400 };
     constexpr float railY = 515.0f, railLeft = 365.0f, railRight = 795.0f;
     const Rectangle<float> bottomBar { 18.0f, 548.0f, 924.0f, 76.0f };
     constexpr int toggleW = 46, toggleH = 72, toggleY = 550, slotW = 146, firstSlotX = 28;
@@ -17,22 +17,37 @@ namespace Layout
 }
 
 //==============================================================================
-ChairGuy::ChairGuy (RangedAudioParameter& p)
+ChairGuy::ChairGuy (RangedAudioParameter& p, AudioProcessorValueTreeState& state)
     : param (p),
+      apvts (state),
       attachment (p, [this] (float v) { distance = v; repaint(); })
 {
     attachment.sendInitialUpdate();
+    shownDistance = distance;
+    tick (0.0f); // start in the right pose, without easing in
     setMouseCursor (MouseCursor::DraggingHandCursor);
     setRepaintsOnMouseActivity (false);
 }
 
 float ChairGuy::centreX() const noexcept
 {
-    return closeX + (farX - closeX) * distance / 100.0f;
+    // The artwork's chair is wider than the old drawing: stop it short of the Mix knob's labels.
+    const float far = artwork.isValid() ? farX - artworkFarInset : farX;
+    return closeX + (far - closeX) * shownDistance / 100.0f;
+}
+
+AffineTransform ChairGuy::artworkTransform() const noexcept
+{
+    const float poleLocal = centreX() + 20.0f, floorLocal = (float) getHeight() - 4.0f;
+    return AffineTransform::translation (-CharacterArtwork::poleX, -CharacterArtwork::floorY)
+        .scaled (artworkScale)
+        .translated (poleLocal + shake.x, floorLocal + shake.y);
 }
 
 Rectangle<float> ChairGuy::bodyBounds() const noexcept
 {
+    if (artwork.isValid())
+        return CharacterArtwork::figureBounds.transformedBy (artworkTransform());
     return { centreX() - 100.0f, 30.0f, 200.0f, (float) getHeight() - 30.0f };
 }
 
@@ -49,7 +64,7 @@ void ChairGuy::mouseDown (const MouseEvent&)
 
 void ChairGuy::mouseDrag (const MouseEvent& e)
 {
-    const float cmPerPixel = 100.0f / (farX - closeX);
+    const float cmPerPixel = 100.0f / (farX - (artwork.isValid() ? artworkFarInset : 0.0f) - closeX);
     attachment.setValueAsPartOfGesture (jlimit (0.0f, 100.0f, dragStartDistance + (float) e.getDistanceFromDragStartX() * cmPerPixel));
 }
 
@@ -63,24 +78,45 @@ void ChairGuy::mouseDoubleClick (const MouseEvent&)
     attachment.setValueAsCompleteGesture (param.convertFrom0to1 (param.getDefaultValue()));
 }
 
-void ChairGuy::setAngry (bool shouldBeAngry)
+void ChairGuy::tick (float dt)
 {
-    if (angry != shouldBeAngry)
+    auto raw = [this] (const char* id) { return apvts.getRawParameterValue (id)->load(); };
+    auto ease = [dt] (float& v, float target, float seconds)
     {
-        angry = shouldBeAngry;
-        shake = {};
+        v = dt <= 0.0f ? target : v + (target - v) * (1.0f - std::exp (-dt / seconds));
+    };
+    auto smooth01 = [] (float x) { x = jlimit (0.0f, 1.0f, x); return x * x * (3.0f - 2.0f * x); };
+
+    const auto previousDistance = shownDistance;
+    const auto previousPose = pose;
+    const auto previousShake = shake;
+
+    ease (shownDistance, distance, 0.06f);
+    const float closeness = Layout::closeness (shownDistance);
+
+    // How hard the effect is driven: mostly the distance, a bit the knobs that make it bigger.
+    const float drive = (ProximityEffectProcessor::patternFactor ((int) raw (ParamIDs::pattern))
+                         + (raw (ParamIDs::lowEnd) + 12.0f) / 24.0f
+                         + raw (ParamIDs::gainBoost) / 12.0f) / 3.0f;
+    const float intensity = closeness * (0.85f + 0.15f * drive);
+    const float angryMode = raw (ParamIDs::angry) > 0.5f ? 1.0f : 0.0f;
+    angry = angryMode > 0.5f;
+
+    ease (pose.squash, closeness, 0.08f);
+    ease (pose.puff, intensity, 0.10f);
+    ease (pose.flush, jmin (1.0f, std::pow (intensity, 1.2f) + 0.4f * angryMode), 0.15f);
+    ease (pose.anger, jmax (smooth01 ((intensity - 0.75f) / 0.17f), angryMode), 0.12f);
+    ease (pose.extreme, jmax (smooth01 ((intensity - 0.9f) / 0.1f), angryMode), 0.15f);
+
+    // Controlled tremble: two incommensurate sines, never random jumps.
+    time += dt;
+    const float amp = 2.2f * pose.extreme;
+    shake = { amp * (std::sin ((float) time * 81.0f) + 0.45f * std::sin ((float) time * 127.0f + 1.3f)),
+              0.35f * amp * std::sin ((float) time * 97.0f + 0.7f) };
+
+    if (std::abs (shownDistance - previousDistance) > 0.01f || ! pose.closeTo (previousPose)
+        || shake != previousShake || pose.extreme > 0.001f)
         repaint();
-    }
-}
-
-void ChairGuy::tick()
-{
-    if (! angry)
-        return;
-
-    const float intensity = 1.5f + 3.0f * Layout::closeness (distance);
-    shake = { (random.nextFloat() - 0.5f) * 2.0f * intensity, (random.nextFloat() - 0.5f) * intensity };
-    repaint();
 }
 
 void ChairGuy::drawChair (Graphics& g, Point<float> base, float squash) const
@@ -282,45 +318,135 @@ void ChairGuy::drawPerson (Graphics& g, Point<float> seat, float puff) const
     }
 }
 
+void ChairGuy::drawSteam (Graphics& g, const AffineTransform& toLocal) const
+{
+    if (pose.extreme < 0.01f)
+        return;
+
+    for (auto [emitter, side] : { std::pair { CharacterArtwork::steamLeft, -1.0f }, std::pair { CharacterArtwork::steamRight, 1.0f } })
+    {
+        const auto origin = artwork.mapForward (emitter, pose).transformedBy (toLocal);
+        for (int i = 0; i < 3; ++i)
+        {
+            const float phase = (float) std::fmod (time * 0.9 + i / 3.0 + (side > 0 ? 0.17 : 0.0), 1.0);
+            const float alpha = pose.extreme * std::sin (MathConstants<float>::pi * phase) * 0.9f;
+            const float radius = 3.5f + 9.0f * phase;
+            const Point<float> c (origin.x + side * (4.0f + 14.0f * phase), origin.y - 6.0f - 42.0f * phase);
+            const auto puff = Rectangle<float> (radius * 2.0f, radius * 1.7f).withCentre (c);
+
+            ColourGradient fill (Colours::white.withAlpha (alpha), c.x - radius * 0.35f, c.y - radius * 0.4f,
+                                 Colour (0xffcfc8bc).withAlpha (alpha), c.x + radius * 0.6f, c.y + radius * 0.7f, true);
+            g.setGradientFill (fill);
+            g.fillEllipse (puff);
+            g.setColour (Palette::ink.withAlpha (alpha * 0.55f));
+            g.drawEllipse (puff, 1.4f);
+        }
+    }
+}
+
+void ChairGuy::drawAngerVein (Graphics& g, const AffineTransform& toLocal) const
+{
+    // The comic "cross-popping vein" on the temple. It pops in by growing (a faded one
+    // would read as a bruise), only when the anger is nearly full.
+    const float grow = jlimit (0.0f, 1.0f, (pose.anger - 0.8f) / 0.15f);
+    if (grow <= 0.0f)
+        return;
+
+    const float alpha = jmin (1.0f, grow * 3.0f);
+    const auto c = artwork.mapForward (CharacterArtwork::veinPoint, pose).transformedBy (toLocal);
+    const float r = 5.5f * (1.0f + 0.2f * pose.puff) * (0.4f + 0.6f * grow);
+    Path vein;
+    for (int q = 0; q < 4; ++q)
+    {
+        const float a = MathConstants<float>::halfPi * (float) q + MathConstants<float>::pi * 0.25f;
+        const Point<float> dir (std::cos (a), std::sin (a)), side (-dir.y, dir.x);
+        const auto mid = c + dir * (r * 0.75f);
+        vein.startNewSubPath (mid + side * (r * 0.5f));
+        vein.quadraticTo (mid - dir * (r * 0.35f), mid - side * (r * 0.5f));
+    }
+    g.setColour (Palette::ink.withAlpha (alpha));
+    g.strokePath (vein, PathStrokeType (3.6f, PathStrokeType::curved, PathStrokeType::rounded));
+    g.setColour (Palette::brick.brighter (0.2f).withAlpha (alpha));
+    g.strokePath (vein, PathStrokeType (2.0f, PathStrokeType::curved, PathStrokeType::rounded));
+}
+
+void ChairGuy::drawBubble (Graphics& g, Point<float> headTop) const
+{
+    const bool furious = pose.anger > 0.6f;
+    String line;
+    if (furious)                    line = "#@%!!";
+    else if (shownDistance < 12.0f) line = "MMH, BASSY!";
+    else if (shownDistance > 92.0f) line = "CAN YOU HEAR ME?";
+
+    if (line.isEmpty())
+        return;
+
+    const auto bubble = Rectangle<float> (128, 38).withCentre ({ headTop.x - 92.0f, jmax (22.0f, headTop.y - 18.0f) });
+    Path p;
+    p.addRoundedRectangle (bubble, 16);
+    p.addTriangle (bubble.getCentreX() + 20, bubble.getBottom() - 2, bubble.getCentreX() + 44, bubble.getBottom() - 2,
+                   bubble.getCentreX() + 56, bubble.getBottom() + 18);
+    g.setColour (Colours::white);
+    g.fillPath (p);
+    g.setColour (Palette::ink);
+    g.strokePath (p, PathStrokeType (2.5f));
+    Comic::plainText (g, line, bubble.reduced (6, 4), 16.0f, Justification::centred, furious ? Palette::brick : Palette::ink);
+}
+
 void ChairGuy::paint (Graphics& g)
 {
-    const float amount = Layout::closeness (distance);
+    if (! artwork.isValid())
+    {
+        paintVector (g);
+        return;
+    }
+
+    const auto toLocal = artworkTransform();
+
+    // Soft floor shadow under shoes and wheels, widening as the chair sinks.
+    const auto floorCentre = Point<float> (CharacterArtwork::poleX - 95.0f, CharacterArtwork::floorY).transformedBy (toLocal);
+    const float shadowW = 250.0f * (1.0f + 0.06f * pose.squash);
+    ColourGradient shadow (Palette::ink.withAlpha (0.22f), floorCentre.x, floorCentre.y - 3.0f,
+                           Palette::ink.withAlpha (0.0f), floorCentre.x + shadowW * 0.5f, floorCentre.y - 3.0f, true);
+    g.setGradientFill (shadow);
+    g.fillEllipse (Rectangle<float> (shadowW, 18.0f).withCentre (floorCentre.translated (0.0f, -4.0f)));
+
+    {
+        // Render at the size it will appear on screen (UI zoom and Retina included), in coarse steps.
+        const float onScreen = artworkScale * Component::getApproximateScaleFactorForComponent (this)
+                             * (float) g.getInternalContext().getPhysicalPixelScaleFactor();
+        const float renderScale = jlimit (0.25f, 1.0f, std::ceil (onScreen * 4.0f) / 4.0f);
+        const auto& image = artwork.render (pose, renderScale);
+
+        Graphics::ScopedSaveState state (g);
+        g.setImageResamplingQuality (Graphics::highResamplingQuality);
+        g.drawImageTransformed (image, AffineTransform::scale ((float) artwork.getWidth() / (float) image.getWidth()).followedBy (toLocal));
+    }
+
+    drawAngerVein (g, toLocal);
+    drawSteam (g, toLocal);
+    drawBubble (g, artwork.mapForward (CharacterArtwork::headTop, pose).transformedBy (toLocal));
+}
+
+// Earlier hand-drawn character, kept as a fallback if the artwork can't be loaded.
+void ChairGuy::paintVector (Graphics& g)
+{
+    const float amount = Layout::closeness (shownDistance);
     const float x = centreX() + shake.x;
     const Point<float> base (x + 20.0f, (float) getHeight() - 4.0f + shake.y);
 
-    // Floor shadow.
     g.setColour (Palette::ink.withAlpha (0.18f));
     g.fillEllipse (Rectangle<float> (170, 14).withCentre (base.translated (-20, -4)));
 
     drawChair (g, base, amount);
     const float seatY = base.y - 112.0f * (1.0f - 0.22f * amount);
     drawPerson (g, { base.x - 4, seatY - 4 }, 1.0f + 0.35f * amount);
-
-    // Speech bubble when things get intense.
-    String line;
-    if (angry)                 line = "#@%!!";
-    else if (distance < 12.0f) line = "MMH, BASSY!";
-    else if (distance > 92.0f) line = "CAN YOU HEAR ME?";
-
-    if (line.isNotEmpty())
-    {
-        const auto bubble = Rectangle<float> (128, 38).withCentre ({ x - 72, 26 });
-        Path p;
-        p.addRoundedRectangle (bubble, 16);
-        p.addTriangle (bubble.getCentreX() + 20, bubble.getBottom() - 2, bubble.getCentreX() + 44, bubble.getBottom() - 2,
-                       bubble.getCentreX() + 56, bubble.getBottom() + 18);
-        g.setColour (Colours::white);
-        g.fillPath (p);
-        g.setColour (Palette::ink);
-        g.strokePath (p, PathStrokeType (2.5f));
-        Comic::plainText (g, line, bubble.reduced (6, 4), 16.0f, Justification::centred,
-                          angry ? Palette::brick : Palette::ink);
-    }
+    drawBubble (g, { x + 20.0f, (float) getHeight() - 290.0f });
 }
 
 //==============================================================================
 ProximityEffectEditor::Panel::Panel (ProximityEffectProcessor& p)
-    : processor (p), guy (*p.apvts.getParameter (ParamIDs::distance))
+    : processor (p), guy (*p.apvts.getParameter (ParamIDs::distance), p.apvts)
 {
     auto setupKnob = [this] (Slider& s, const char* id, bool pointer = false)
     {
@@ -619,7 +745,6 @@ ProximityEffectEditor::ProximityEffectEditor (ProximityEffectProcessor& p)
 {
     setLookAndFeel (&lookAndFeel);
     addAndMakeVisible (panel);
-    panel.guy.setAngry (panel.angry.getToggleState());
     panel.setSize (baseWidth, baseHeight);
 
     setResizable (true, true);
@@ -627,7 +752,7 @@ ProximityEffectEditor::ProximityEffectEditor (ProximityEffectProcessor& p)
     getConstrainer()->setFixedAspectRatio ((double) baseWidth / (double) baseHeight);
     setSize (baseWidth, baseHeight);
 
-    startTimerHz (30);
+    startTimerHz (60);
 }
 
 ProximityEffectEditor::~ProximityEffectEditor()
@@ -647,6 +772,5 @@ void ProximityEffectEditor::resized()
 
 void ProximityEffectEditor::timerCallback()
 {
-    panel.guy.setAngry (panel.angry.getToggleState());
-    panel.guy.tick();
+    panel.guy.tick (1.0f / 60.0f);
 }

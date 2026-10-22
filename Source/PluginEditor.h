@@ -2,12 +2,13 @@
 
 #include "PluginProcessor.h"
 #include "ComicLookAndFeel.h"
+#include "CharacterArtwork.h"
 
 // The guy on the office chair: drag him toward the mic to crank the proximity effect.
 class ChairGuy : public juce::Component
 {
 public:
-    ChairGuy (juce::RangedAudioParameter& distanceParam);
+    ChairGuy (juce::RangedAudioParameter& distanceParam, juce::AudioProcessorValueTreeState&);
 
     void paint (juce::Graphics&) override;
     bool hitTest (int x, int y) override;
@@ -16,25 +17,36 @@ public:
     void mouseUp (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
 
-    void setAngry (bool shouldBeAngry);
-    void tick(); // animation step, called from the editor timer
+    // Animation step, called from the editor timer. Reads the plugin's parameters and eases
+    // the pose toward them, so the character follows knobs and automation without jumps.
+    void tick (float secondsSinceLastTick);
 
-    // Horizontal travel of the character, in local coordinates.
-    static constexpr float closeX = 165.0f, farX = 400.0f;
+    // Chair pole travel (minus 20 px), in local coordinates: 0 cm at closeX, 100 cm at farX.
+    static constexpr float closeX = 190.0f, farX = 440.0f;
+    static constexpr float artworkScale = 0.5f, artworkFarInset = 26.0f;
 
 private:
     float centreX() const noexcept;
     juce::Rectangle<float> bodyBounds() const noexcept;
+    juce::AffineTransform artworkTransform() const noexcept;
+    void drawSteam (juce::Graphics&, const juce::AffineTransform&) const;
+    void drawAngerVein (juce::Graphics&, const juce::AffineTransform&) const;
+    void drawBubble (juce::Graphics&, juce::Point<float> headTop) const;
+    void paintVector (juce::Graphics&);
     void drawChair (juce::Graphics&, juce::Point<float> base, float squash) const;
     void drawPerson (juce::Graphics&, juce::Point<float> seat, float puff) const;
 
     juce::RangedAudioParameter& param;
+    juce::AudioProcessorValueTreeState& apvts;
     juce::ParameterAttachment attachment;
-    float distance = 60.0f;
+    float distance = 60.0f, shownDistance = 60.0f;
     float dragStartDistance = 0.0f;
     bool angry = false;
     juce::Point<float> shake;
-    juce::Random random;
+    double time = 0.0;
+
+    CharacterArtwork artwork;
+    CharacterArtwork::Pose pose;
 };
 
 class ProximityEffectEditor : public juce::AudioProcessorEditor, private juce::Timer

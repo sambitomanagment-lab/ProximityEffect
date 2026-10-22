@@ -5,6 +5,7 @@
 //   ProximityEffectTests --snapshots DIR  also render the GUI to PNG files in DIR
 #include "../Source/PluginProcessor.h"
 #include "../Source/PluginEditor.h"
+#include "BinaryData.h"
 
 using namespace juce;
 
@@ -441,6 +442,98 @@ void testEditor()
     }
 }
 
+void testCharacterArtwork()
+{
+    section ("character artwork");
+    CharacterArtwork art;
+    check (art.isValid() && art.getWidth() == 510 && art.getHeight() == 700, "artwork embedded and loaded (510x700)");
+    if (! art.isValid())
+        return;
+
+    auto snapshot = [] (const Image& im) { return im.createCopy(); };
+    auto diff = [] (const Image& a, const Image& b, Rectangle<int> area)
+    {
+        double sum = 0.0;
+        for (int y = area.getY(); y < area.getBottom(); ++y)
+            for (int x = area.getX(); x < area.getRight(); ++x)
+            {
+                const auto ca = a.getPixelAt (x, y), cb = b.getPixelAt (x, y);
+                sum += std::abs (ca.getRed() - cb.getRed()) + std::abs (ca.getGreen() - cb.getGreen())
+                     + std::abs (ca.getBlue() - cb.getBlue()) + std::abs (ca.getAlpha() - cb.getAlpha());
+            }
+        return sum / (area.getWidth() * area.getHeight());
+    };
+
+    CharacterArtwork::Pose rest;
+    const auto restImage = snapshot (art.render (rest));
+    const Rectangle<int> head (230, 80, 150, 160), legs (60, 480, 300, 100);
+
+    // At rest the artwork is reproduced untouched.
+    {
+        CharacterArtwork reference;
+        const Image::BitmapData raw (ImageCache::getFromMemory (BinaryData::character_png, BinaryData::character_pngSize)
+                                         .convertedToFormat (Image::ARGB), Image::BitmapData::readOnly);
+        double sum = 0.0;
+        for (int y = 0; y < restImage.getHeight(); y += 3)
+            for (int x = 0; x < restImage.getWidth(); x += 3)
+                sum += std::abs ((int) restImage.getPixelAt (x, y).getAlpha() - (int) raw.getPixelColour (x, y).getAlpha());
+        check (sum < 1.0, "rest pose should equal the original artwork");
+    }
+
+    CharacterArtwork::Pose p;
+    p.puff = 1.0f;
+    const auto puffed = snapshot (art.render (p));
+    check (diff (puffed, restImage, head) > 2.0 && diff (puffed, restImage, legs) < 0.01, "puff changes the face only");
+
+    p = {}; p.flush = 1.0f;
+    const auto flushed = snapshot (art.render (p));
+    double redGain = 0.0, greenLoss = 0.0;
+    for (int y = 150; y < 170; ++y)
+        for (int x = 265; x < 280; ++x)
+        {
+            redGain += flushed.getPixelAt (x, y).getRed() - restImage.getPixelAt (x, y).getRed();
+            greenLoss += restImage.getPixelAt (x, y).getGreen() - flushed.getPixelAt (x, y).getGreen();
+        }
+    check (redGain >= 0.0 && greenLoss > 0.0, "flush makes the cheek redder");
+    check (diff (flushed, restImage, { 200, 300, 250, 100 }) < 0.01, "flush leaves the hoodie alone");
+
+    p = {}; p.anger = 1.0f;
+    check (diff (art.render (p), restImage, head) > 1.0, "anger changes the face");
+
+    p = {}; p.squash = 1.0f;
+    const auto squashed = snapshot (art.render (p));
+    check (diff (squashed, restImage, { 0, 600, 510, 100 }) < 0.5, "shoes and wheels stay on the floor");
+    check (diff (squashed, restImage, head) > 1.0, "the upper body sinks with the chair");
+
+    // Small pose changes give small image changes (no jumps between frames).
+    // The image must change in proportion to the pose: a 2% step changes about half as much as a 4% one.
+    auto posed = [] (float v) { CharacterArtwork::Pose q; q.squash = q.puff = q.flush = q.anger = v; return q; };
+    const auto ia = snapshot (art.render (posed (0.50f)));
+    const auto ib = snapshot (art.render (posed (0.52f)));
+    const auto ic = snapshot (art.render (posed (0.54f)));
+    const Rectangle<int> all (0, 0, 510, 700);
+    const double small = diff (ib, ia, all), big = diff (ic, ia, all);
+    check (small > 0.0 && small < 0.75 * big, "pose changes should be gradual (2%: " + String (small, 3) + ", 4%: " + String (big, 3) + ")");
+
+    // Forward mapping lands where the inverse mapping comes from.
+    p = {}; p.squash = 1.0f; p.puff = 1.0f; p.anger = 1.0f;
+    const auto top = art.mapForward (CharacterArtwork::headTop, p);
+    check (top.y > CharacterArtwork::headTop.y && top.x < CharacterArtwork::headTop.x,
+           "head top moves down (chair) and toward the mic (lean)");
+
+    // Render cost per changed frame.
+    const auto start = Time::getMillisecondCounterHiRes();
+    for (int i = 0; i < 30; ++i)
+    {
+        CharacterArtwork::Pose q;
+        q.squash = q.puff = q.flush = q.anger = (float) i / 30.0f;
+        art.render (q);
+    }
+    const double ms = (Time::getMillisecondCounterHiRes() - start) / 30.0;
+    std::printf ("  render: %.2f ms per changed frame\n", ms);
+    check (ms < 40.0, "artwork render should be fast enough for the 60 Hz UI timer, got " + String (ms, 2) + " ms");
+}
+
 void printReport()
 {
     section ("report: gain in dB by distance and pattern");
@@ -461,12 +554,20 @@ void writeSnapshots (const File& dir)
 {
     section ("snapshots");
     dir.createDirectory();
-    struct Shot { const char* name; float distance; bool angry; };
-    for (auto shot : { Shot { "ui-far.png", 80.0f, false }, Shot { "ui-close.png", 5.0f, false }, Shot { "ui-angry.png", 30.0f, true } })
+    struct Shot { const char* name; float distance; bool angry; bool pushed; };
+    for (auto shot : { Shot { "ui-far.png", 100.0f, false, false }, Shot { "ui-mid.png", 50.0f, false, false },
+                       Shot { "ui-close.png", 5.0f, false, false }, Shot { "ui-max.png", 0.0f, false, true },
+                       Shot { "ui-angry.png", 40.0f, true, false } })
     {
         ProximityEffectProcessor p;
         setParam (p, ParamIDs::distance, shot.distance);
         setParam (p, ParamIDs::angry, shot.angry ? 1.0f : 0.0f);
+        if (shot.pushed)
+        {
+            setParam (p, ParamIDs::pattern, 4.0f);
+            setParam (p, ParamIDs::lowEnd, 12.0f);
+            setParam (p, ParamIDs::gainBoost, 12.0f);
+        }
         std::unique_ptr<AudioProcessorEditor> editor (p.createEditor());
         auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
         auto out = dir.getChildFile (shot.name);
@@ -495,6 +596,7 @@ int main (int argc, char** argv)
     testSmoothAutomation();
     testStatePersistence();
     testEditor();
+    testCharacterArtwork();
 
     if (args.contains ("--report"))
         printReport();

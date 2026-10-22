@@ -39,9 +39,13 @@ juce_add_plugin(ProximityEffect
     VST3_CATEGORIES Fx EQ Distortion
     AU_MAIN_TYPE kAudioUnitType_Effect)
 
+juce_add_binary_data(ProximityEffectAssets SOURCES Assets/character.png)
+set_target_properties(ProximityEffectAssets PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 target_sources(ProximityEffect PRIVATE
     Source/PluginProcessor.cpp
-    Source/PluginEditor.cpp)
+    Source/PluginEditor.cpp
+    Source/CharacterArtwork.cpp)
 
 target_compile_definitions(ProximityEffect PUBLIC
     JUCE_WEB_BROWSER=0
@@ -51,6 +55,7 @@ target_compile_definitions(ProximityEffect PUBLIC
 
 target_link_libraries(ProximityEffect
     PRIVATE
+        ProximityEffectAssets
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC
@@ -65,13 +70,14 @@ if(PE_BUILD_TESTS)
     target_sources(ProximityEffectTests PRIVATE
         Tests/ProximityEffectTests.cpp
         Source/PluginProcessor.cpp
-        Source/PluginEditor.cpp)
+        Source/PluginEditor.cpp
+        Source/CharacterArtwork.cpp)
     target_compile_definitions(ProximityEffectTests PRIVATE
         JucePlugin_Name="Proximity Effect"
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0)
     target_link_libraries(ProximityEffectTests
-        PRIVATE juce::juce_audio_utils juce::juce_dsp
+        PRIVATE ProximityEffectAssets juce::juce_audio_utils juce::juce_dsp
         PUBLIC juce::juce_recommended_config_flags)
     add_test(NAME ProximityEffectTests COMMAND ProximityEffectTests)
 endif()

@@ -83,7 +83,8 @@ Opzioni: `--report` stampa la tabella completa di risposta in frequenza, `--snap
 ## Struttura
 
 ```
-Source/          codice del plugin (DSP, GUI)
+Source/          codice del plugin (DSP, GUI, animazione del personaggio)
+Assets/          mockup originale e personaggio ritagliato (scripts/extract_character.py)
 Tests/           test automatici
 scripts/         build e packaging
 docs/INSTALL.md  istruzioni di installazione
