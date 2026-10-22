@@ -9,13 +9,13 @@
 
 ## 2. Ultimo aggiornamento
 
-2026-10-22 09:40 UTC
+2026-10-22 09:40 UTC (risultati CI aggiunti alle 09:37)
 
 ## 3. Stato generale
 
 Codice, GUI, DSP, test automatici, script di build/packaging e workflow CI completi.
 Il personaggio ora è l'artwork originale del mockup, animato (sessione 3, §6).
-Verificato su Linux x64 (build, 173 test, pluginval). Su GitHub Actions: Windows x64 verificato al primo run (build, test, pluginval, zip); macOS: build e test passati al primo run, il run completo con pluginval/auval/zip è da confermare (§9).
+Verificato su Linux x64 (build, 173 test, pluginval) e su GitHub Actions con la versione attuale (run 39754412189, commit eaab638): Windows x64 e macOS universale (arm64 + x86_64) compilati, testati, validati (pluginval; auval su macOS) e impacchettati in zip.
 
 ## 4. Funzionalità presenti e verificate
 
@@ -37,7 +37,6 @@ Verificato su Linux x64 (build, 173 test, pluginval). Su GitHub Actions: Windows
 
 ## 5. Funzionalità incomplete, non verificate, problemi visivi rimasti
 
-- **macOS:** build e 162 test passati sul runner; pluginval, auval e zip in attesa del run successivo alla correzione dello script.
 - **Prova in DAW reale (FL Studio ecc.):** non fatta. In particolare non ho visto l'animazione dal vivo: tremolio e vapore sono verificati solo su screenshot statici e leggendo il codice.
 - **Risoluzione dell'artwork:** il ritaglio dal mockup è 510×630 px. A zoom 100% è ridotto a metà (nitido); a zoom 200% su schermo normale o 100% su Retina è a dimensione nativa; oltre, leggermente morbido. Serve l'illustrazione originale ad alta risoluzione per andare oltre.
 - **Fumetto:** con il personaggio vicino al microfono il fumetto copre la parte alta del microfono (come prima).
@@ -76,6 +75,8 @@ Come le manopole guidano il personaggio (in `ChairGuy::tick`):
 | 2026-10-22 | Linux x64 | `pluginval --strictness-level 10 --skip-gui-tests` sul VST3 | SUCCESS (sessione 3) |
 | 2026-10-22 | GitHub Actions, windows-latest | workflow completo (run 39746711340) | OK: build, ctest, report, pluginval 10, zip (versione sessione 2) |
 | 2026-10-22 | GitHub Actions, macos-latest | stesso run | build universale e ctest OK; fallito lo step "DSP report" per un errore nello script (corretto in 06accbd) |
+| 2026-10-22 | GitHub Actions, Windows + macOS | run 39750468726 (06accbd, versione sessione 2) | tutto verde; auval: "AU VALIDATION SUCCEEDED"; lipo: x86_64 arm64 |
+| 2026-10-22 | GitHub Actions, Windows + macOS | run 39754412189 (eaab638, nuovo personaggio) | tutto verde: build, ctest, report DSP, pluginval (Windows e macOS), auval, zip |
 
 ## 8. Problemi aperti e tentativi
 
@@ -87,7 +88,7 @@ Come le manopole guidano il personaggio (in `ChairGuy::tick`):
 
 - Accesso push a `sambitomanagment-lab/PRODUCER-OS` verificato; creazione nuovi repository non disponibile da questa sessione.
 - Workflow nel branch: `.github/workflows/proximity-effect.yml` (copia di `proximity-effect/.github/workflows/build.yml` con percorsi adattati), si attiva solo sul branch `proximity-effect` e sui tag `proximity-effect-v*`.
-- Run: https://github.com/sambitomanagment-lab/PRODUCER-OS/actions (filtra "Proximity Effect").
+- Ultimo run verde con il personaggio nuovo: https://github.com/sambitomanagment-lab/PRODUCER-OS/actions/runs/39754412189 (artifact `ProximityEffect-Windows-x64` e `ProximityEffect-macOS-Universal`, conservati da GitHub per 90 giorni).
 - Artifacts (zip Windows e macOS): scaricabili dalla pagina del run; da questa sessione il download è bloccato dal proxy di rete, quindi non sono copiati in locale.
 
 ## 10. Repository locale e remoto
